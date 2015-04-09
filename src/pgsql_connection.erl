@@ -79,7 +79,8 @@
     row/0,
     rows/0,
     result_tuple/0,
-    pgsql_connection/0]).
+    pgsql_connection/0,
+    query_options/0]).
 
 %%--------------------------------------------------------------------
 %% Default settings
