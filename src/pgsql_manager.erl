@@ -36,7 +36,14 @@
 
 
 start_link(Dbase,User,Pass,NumConns) ->
-  gen_server:start_link({local, pgsql_manager}, pgsql_manager, {Dbase,User,Pass,NumConns}, []).
+  case gen_server:start_link({local, pgsql_manager}, pgsql_manager, {Dbase,User,Pass,NumConns}, []) of
+    {ok, Pid} -> {ok, Pid};
+    {error, {already_started, Pid}} ->
+      % don't start a new server but extend the current connection pool by the number of connections <NumConns>
+      gen_server:call(Pid, {extend_conn_pool, NumConns}),
+      {ok, Pid}
+    % other error cases will [intentionally] crash this routine
+  end.
 
 
 stop() ->
@@ -103,6 +110,9 @@ round_robin_get_next() ->
   gen_server:call(pgsql_manager, rr_get_next).
 
 
+make_new_connections(N,{Dbase,User,Pass}) ->
+  lists:map(fun (_) -> pgsql_connection:open(Dbase,User,Pass) end, lists:seq(1,N)).
+
 %%--------------------------------------------------------------------
 %% gen_server callbacks
 %%
@@ -110,7 +120,7 @@ round_robin_get_next() ->
 
 init({Dbase,User,Pass,NumConns}) ->
   {ok, R} = pgsql_connection_sup:start_link(),
-  Cs = lists:map(fun (_) -> pgsql_connection:open(Dbase,User,Pass) end, lists:seq(1,NumConns)),
+  Cs = make_new_connections(NumConns,{Dbase,User,Pass}),
   {ok, {R, Cs, [], [], {Dbase,User,Pass}}}.
 
 
@@ -120,11 +130,14 @@ handle_call(rr_get_next,_From,{R,[],Used,Pool,Credentials}) ->
 handle_call(rr_get_next,_From,{R,[Conn|N1],Used,Pool,Credentials}) ->
   {reply, Conn, {R,N1,[Conn|Used],Pool,Credentials}};
 handle_call(open,_From,{R,Nxt,Used,Pool,Credentials={Db,User,Pass}}) ->
-  {ok, Conn} = pgsql_connection:open(Db,User,Pass),
+  Conn = pgsql_connection:open(Db,User,Pass),
   {reply, Conn, {R,Nxt,Used,[Conn|Pool],Credentials}};
 handle_call({close,C},_From,{R,Nxt,Used,Pool,Credentials}) ->
   pgsql_connection:close(C),
-  {reply,ok,{R,Nxt,Used,lists:delete(C,Pool),Credentials}};
+  {reply, ok, {R,Nxt,Used,lists:delete(C,Pool),Credentials}};
+handle_call({extend_conn_pool, N},_From,{R,Nxt,Used,Pool,Credentials}) ->
+  Cs = make_new_connections(N,Credentials),
+  {reply, ok, {R,Cs++Nxt,Used,Pool,Credentials}};
 handle_call(_Request,_From,State) ->
   {reply, not_understood, State}.
 
