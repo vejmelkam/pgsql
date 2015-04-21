@@ -39,9 +39,13 @@ start_link(Dbase,User,Pass,NumConns) ->
   case gen_server:start_link({local, pgsql_manager}, pgsql_manager, {Dbase,User,Pass,NumConns}, []) of
     {ok, Pid} -> {ok, Pid};
     {error, {already_started, Pid}} ->
-      % don't start a new server but extend the current connection pool by the number of connections <NumConns>
-      gen_server:call(Pid, {extend_conn_pool, NumConns}),
-      {ok, Pid}
+      case get_dbase() of
+        Dbase ->
+          % don't start a new server but extend the current connection pool by the number of connections <NumConns>
+          gen_server:call(Pid, {extend_conn_pool, NumConns}),
+          {ok, Pid}
+          % a different dbase will intentionally crash the routine
+      end
     % other error cases will [intentionally] crash this routine
   end.
 
@@ -56,6 +60,9 @@ open() ->
 
 close(C) ->
   gen_server:call(pgsql_manager, {close, C}).
+
+get_dbase() ->
+  gen_server:call(pgsql_manager, get_dbase).
 
 
 %%--------------------------------------------------------------------
@@ -124,6 +131,8 @@ init({Dbase,User,Pass,NumConns}) ->
   {ok, {R, Cs, [], [], {Dbase,User,Pass}}}.
 
 
+handle_call(get_dbase,_From,State={_R,[],_Used,_Pool,{Db,_User,_Pass}}) ->
+  {reply, Db, State};
 handle_call(rr_get_next,_From,{R,[],Used,Pool,Credentials}) ->
   [Conn|N1] = lists:reverse(Used),
   {reply, Conn, {R,N1,[Conn],Pool,Credentials}};
