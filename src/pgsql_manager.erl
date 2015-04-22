@@ -131,7 +131,7 @@ init({Dbase,User,Pass,NumConns}) ->
   {ok, {R, Cs, [], [], {Dbase,User,Pass}}}.
 
 
-handle_call(get_dbase,_From,State={_R,[],_Used,_Pool,{Db,_User,_Pass}}) ->
+handle_call(get_dbase,_From,State={_R,_Nxt,_Used,_Pool,{Db,_User,_Pass}}) ->
   {reply, Db, State};
 handle_call(rr_get_next,_From,{R,[],Used,Pool,Credentials}) ->
   [Conn|N1] = lists:reverse(Used),
